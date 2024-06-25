@@ -5,6 +5,17 @@ if [[ -z ${ANDROID_NDK_HOME} ]]; then
     exit 1
 fi
 
+get_platform() {
+    case "$(uname -s)" in
+        Darwin*)    echo "darwin" ;;
+        Linux*)     echo "linux" ;;
+        *)          echo "unknown" ;;
+    esac
+}
+
+PLATFORM=$(get_platform)
+echo "Current platform is: $PLATFORM"
+
 TAG=${1}
 if [[ -z ${TAG} ]]; then
     echo "need input frp build tag"
@@ -19,25 +30,25 @@ rm -v -rf bin
 
 echo "Build for arm64"
 
-export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android21-clang
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/aarch64-linux-android21-clang
 env CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm64/frpc ./cmd/frpc
 env CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm64/frps ./cmd/frps
 
 echo "Build for amd64"
 
-export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/darwin-x86_64/bin/x86_64-linux-android21-clang
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/x86_64-linux-android21-clang
 env CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86_64/frpc ./cmd/frpc
 env CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86_64/frps ./cmd/frps
 
 echo "Build for arm"
 
-export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi16-clang
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/armv7a-linux-androideabi16-clang
 env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm/frpc ./cmd/frpc
 env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm/frps ./cmd/frps
 
 echo "Build for x86"
 
-export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/darwin-x86_64/bin/i686-linux-android16-clang
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/i686-linux-android16-clang
 env CGO_ENABLED=1 GOOS=android GOARCH=386 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86/frpc ./cmd/frpc
 env CGO_ENABLED=1 GOOS=android GOARCH=386 go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86/frps ./cmd/frps
 
