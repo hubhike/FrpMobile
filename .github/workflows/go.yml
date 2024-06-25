@@ -35,5 +35,6 @@ jobs:
     - name: Build
       run: |
         export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
+        export GO111MODULE=on
         ./build-android.sh $(cat frpVersion.txt)
 
