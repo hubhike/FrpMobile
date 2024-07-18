@@ -27,15 +27,24 @@ jobs:
       with:
         ndk-version: r23c
 
-    - name: Install UPX
+    # - name: Install UPX
+    #   run: |
+    #     sudo apt-get update
+    #     sudo apt-get install -y upx
+    - name: Set Release Name
       run: |
-        sudo apt-get update
-        sudo apt-get install -y upx
+        RELEASE_NAME=$(cat frpVersion.txt)
+        echo "RELEASE_NAME=${RELEASE_NAME}"
 
     - name: Build
       run: |
         export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
         export GO111MODULE=on
+
+        wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
+        tar -xzf upx-4.2.4-amd64_linux.tar.xz
+        export PATH=$(PWD)/upx-4.2.4-amd64_linux:$PATH
+        
         ./build-android.sh $(cat frpVersion.txt)
 
     - name: Create Release
@@ -44,8 +53,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-          tag_name: $(cat frpVersion.txt)
-          release_name: Auto Release $(cat frpVersion.txt)
+          tag_name: ${{ env.RELEASE_NAME }}
+          release_name: Auto Release ${{ env.RELEASE_NAME }}
           draft: true
           prerelease: false
 
@@ -54,7 +63,7 @@ jobs:
         for file in frp/bin/upx/*; do
           if [[ -f ${file} ]]; then
               echo "Uploading $file"
-              gh release upload ${{ github.ref }} "$file" --repo ${{ github.repository }}
+              gh release upload ${{ env.RELEASE_NAME }} "$file" --repo ${{ github.repository }}
           fi
         done
       env:
