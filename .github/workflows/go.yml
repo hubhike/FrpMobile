@@ -31,10 +31,9 @@ jobs:
     #   run: |
     #     sudo apt-get update
     #     sudo apt-get install -y upx
-    - name: Set Release Name
-      run: |
-        RELEASE_NAME=$(cat frpVersion.txt)
-        echo "RELEASE_NAME=${RELEASE_NAME}"
+    - name: Get Tag
+      id: get_tag
+      run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
 
     - name: Build
       run: |
@@ -53,18 +52,20 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-          tag_name: ${{ RELEASE_NAME }}
-          release_name: Auto Release ${{ RELEASE_NAME }}
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          release_name: Auto Release ${{ steps.get_version.outputs.VERSION }}
           draft: true
           prerelease: false
 
     - name: Upload files
-      run: |
-        for file in frp/bin/upx/*; do
-          if [[ -f ${file} ]]; then
-              echo "Uploading $file"
-              gh release upload ${{ RELEASE_NAME }} "$file" --repo ${{ github.repository }}
-          fi
-        done
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ steps.get_version.outputs.VERSION }}
+      run: |
+        cd frp/bin/upx/
+        for file in *; do
+          if [[ -f ${file} ]]; then
+              echo "Uploading $file"
+              gh release upload $VERSION "$file" --repo ${{ github.repository }}
+          fi
+        done
