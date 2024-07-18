@@ -42,7 +42,7 @@ jobs:
         export GO111MODULE=on
 
         wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
-        tar -xzf upx-4.2.4-amd64_linux.tar.xz
+        tar -xf upx-4.2.4-amd64_linux.tar.xz
         export PATH=$(PWD)/upx-4.2.4-amd64_linux:$PATH
         
         ./build-android.sh $(cat frpVersion.txt)
