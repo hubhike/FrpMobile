@@ -52,15 +52,15 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-          tag_name: ${{ steps.get_version.outputs.VERSION }}
-          release_name: Auto Release ${{ steps.get_version.outputs.VERSION }}
+          tag_name: ${{ steps.get_tag.outputs.VERSION }}
+          release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
           draft: true
           prerelease: false
 
     - name: Upload files
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        VERSION: ${{ steps.get_version.outputs.VERSION }}
+        VERSION: ${{ steps.get_tag.outputs.VERSION }}
       run: |
         cd frp/bin/upx/
         for file in *; do
