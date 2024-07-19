@@ -69,3 +69,6 @@ jobs:
               gh release upload $VERSION "$file" --repo ${{ github.repository }}
           fi
         done
+    - name: Bin Files Hash
+      run: |
+        go run genDownloadConfig.go -d ./frp/bin/upx
