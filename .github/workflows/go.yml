@@ -78,8 +78,12 @@ jobs:
       github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-      - name: Wait for file update (optional, for testing)
-        run: sleep 5 # 添加短暂延时，确保文件更新同步，可根据实际情况调整时间
+      - name: Clean workspace
+        run: |
+          git clean -fdx
+          git reset --hard HEAD
+      - name: Wait for file update
+        run: sleep 10 # 增加延时时间
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
@@ -140,4 +144,4 @@ jobs:
       - name: Generate Download Config (MD5)
         run: |
           go run genDownloadConfig.go -d ./frp/bin/upx > download-config.json
-          gh release upload "${{ steps.get_tag.outputs.VERSION }}" download-config.json --repo ${{ github.repository }}
+          gh release upload "${{ steps.get_tag.outputs.VERSION }}" download-config.json --repo ${{ github.repository }}    
