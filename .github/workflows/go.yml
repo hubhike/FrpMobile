@@ -5,9 +5,9 @@ name: Go
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "one" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "one" ]
 
 jobs:
 
@@ -27,10 +27,6 @@ jobs:
       with:
         ndk-version: r23c
 
-    # - name: Install UPX
-    #   run: |
-    #     sudo apt-get update
-    #     sudo apt-get install -y upx
     - name: Get Tag
       id: get_tag
       run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
@@ -40,10 +36,12 @@ jobs:
         export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
         export GO111MODULE=on
 
+        # 下载并安装UPX
         wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
         tar -xf upx-4.2.4-amd64_linux.tar.xz
         export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
         
+        # 执行构建脚本（参数为frp版本号）
         ./build-android.sh $(cat frpVersion.txt)
 
     - name: Create Release
@@ -57,18 +55,26 @@ jobs:
           draft: true
           prerelease: false
 
-    - name: Upload files
+    - name: Generate Download Config
+      run: |
+        # 运行genDownloadConfig.go并将输出保存为download-config.json
+        go run genDownloadConfig.go -d ./frp/bin/upx -version ${{ steps.get_tag.outputs.VERSION }} > download-config.json
+
+    - name: Upload files to Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         VERSION: ${{ steps.get_tag.outputs.VERSION }}
       run: |
+        # 上传二进制文件
         cd frp/bin/upx/
         for file in *; do
           if [[ -f ${file} ]]; then
-              echo "Uploading $file"
+              echo "Uploading binary file: $file"
               gh release upload "$VERSION" "$file" --repo ${{ github.repository }}
           fi
         done
-    - name: Bin Files Hash
-      run: |
-        go run genDownloadConfig.go -d ./frp/bin/upx
+
+        # 回到根目录，上传JSON配置文件
+        cd ../../../
+        echo "Uploading download-config.json"
+        gh release upload "$VERSION" download-config.json --repo ${{ github.repository }}
