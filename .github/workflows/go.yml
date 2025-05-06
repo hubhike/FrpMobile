@@ -10,7 +10,6 @@ on:
     branches: [ "master" ]
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
@@ -31,10 +30,10 @@ jobs:
     #   run: |
     #     sudo apt-get update
     #     sudo apt-get install -y upx
+
     - name: Get Tag
       id: get_tag
-      #作者版本 run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
-      run: echo "VERSION=$(cat frpVersion.txt)" >> $GITHUB_OUTPUT
+      run: echo "VERSION=$(cat frpVersion.txt)" >> $GITHUB_OUTPUT  # 替换为新的环境文件语法
 
     - name: Build
       run: |
@@ -53,7 +52,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-          tag_name: ${{ steps.get_tag.outputs.VERSION }}
+          tag_name: ${{ steps.get_tag.outputs.VERSION }}  # 输出引用方式不变
           release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
           draft: true
           prerelease: false
@@ -61,7 +60,7 @@ jobs:
     - name: Upload files
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        VERSION: ${{ steps.get_tag.outputs.VERSION }}
+        VERSION: ${{ steps.get_tag.outputs.VERSION }}  # 输出引用方式不变
       run: |
         cd frp/bin/upx/
         for file in *; do
@@ -70,6 +69,7 @@ jobs:
               gh release upload "$VERSION" "$file" --repo ${{ github.repository }}
           fi
         done
+
     - name: Bin Files Hash
       run: |
         go run genDownloadConfig.go -d ./frp/bin/upx
