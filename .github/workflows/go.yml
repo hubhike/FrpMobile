@@ -33,7 +33,7 @@ jobs:
     #     sudo apt-get install -y upx
     - name: Get Tag
       id: get_tag
-      run: echo "VERSION=$(cat frpVersion.txt)" >> $GITHUB_OUTPUT
+      run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
 
     - name: Build
       run: |
