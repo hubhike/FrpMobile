@@ -103,5 +103,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          go run genDownloadConfig.go -d ./frp/bin/upx > download-config.json
+          go run genDownloadConfig.go -d ./frp/bin/upx -v "${{ needs.check-latest-version.outputs.LATEST_VERSION }}" > download-config.json
           gh release upload "${{ needs.check-latest-version.outputs.LATEST_VERSION }}" download-config.json --repo ${{ github.repository }}    
