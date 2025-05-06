@@ -33,7 +33,7 @@ jobs:
         id: get-latest-version
         run: |
           LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/fatedier/frp/releases/latest | jq -r '.tag_name')
-          echo "::set-output name=LATEST_VERSION::$LATEST_TAG"
+          echo "LATEST_VERSION=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "$LATEST_TAG" > frpVersion.txt
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
@@ -87,6 +87,7 @@ jobs:
       - name: Upload files to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.check-latest-version.outputs.LATEST_VERSION }}
         run: |
           cd frp/bin/upx/
@@ -98,6 +99,9 @@ jobs:
           done
 
       - name: Generate Download Config (MD5)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           go run genDownloadConfig.go -d ./frp/bin/upx > download-config.json
           gh release upload "${{ needs.check-latest-version.outputs.LATEST_VERSION }}" download-config.json --repo ${{ github.repository }}    
