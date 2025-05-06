@@ -1,74 +1,106 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
-name: Go
+name: Go Build and Release  # 工作流名称（可自定义）
 
 on:
+  # 1. 推送到 main 分支时自动触发
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]  # 监听 main 分支（根据实际分支调整）
+  # 2. 针对 main 分支的拉取请求触发
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
+  # 3. 手动触发（可选，方便测试）
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "手动输入版本号（可选）"
+        required: false
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v4  # 检出代码（必须步骤）
 
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.23'
+        go-version: '1.23'  # 根据项目需求调整 Go 版本
 
     - name: Setup Android NDK
       id: setup-ndk
       uses: nttld/setup-ndk@v1
       with:
-        ndk-version: r23c
+        ndk-version: r23c  # 根据项目需求调整 NDK 版本
 
-    # - name: Install UPX
-    #   run: |
-    #     sudo apt-get update
-    #     sudo apt-get install -y upx
     - name: Get Tag
       id: get_tag
-      run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
+      run: |
+        # 从 frpVersion.txt 读取版本号（去掉前缀 v）
+        VERSION=$(cat frpVersion.txt | sed 's/^v//')
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+      # 输出示例：VERSION=0.62.1
 
-    - name: Build
+    - name: Build FRP Binaries
       run: |
         export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
         export GO111MODULE=on
 
+        # 安装 UPX 压缩工具
         wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
         tar -xf upx-4.2.4-amd64_linux.tar.xz
         export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
         
-        ./build-android.sh $(cat frpVersion.txt)
+        # 执行构建脚本（生成二进制文件到 frp/bin/upx/）
+        ./build-android.sh "v$(cat frpVersion.txt)"  # 传递带 v 的版本号给构建脚本
 
-    - name: Create Release
+    - name: Generate download_config.json
+      run: |
+        # 动态生成 downloadBaseUrl（版本号从 frpVersion.txt 获取）
+        VERSION=$(cat frpVersion.txt)
+        BASE_URL="https://github.com/hubhike/FrpMobile/releases/download/${VERSION}/"
+
+        # 运行工具生成 JSON（假设 genDownloadConfig.go 支持 -base-url 参数）
+        go run genDownloadConfig.go \
+          -d ./frp/bin/upx \
+          -o download_config.json \
+          -base-url "$BASE_URL"
+
+        # 验证文件生成（失败时终止流程）
+        if [[ ! -f download_config.json ]]; then
+          echo "❌ download_config.json 生成失败"
+          exit 1
+        fi
+
+    - name: Create GitHub Release
       id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-          tag_name: ${{ steps.get_tag.outputs.VERSION }}
-          release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
-          draft: true
-          prerelease: false
+        tag_name: ${{ steps.get_tag.outputs.VERSION }}  # 版本标签（如 0.62.1）
+        release_name: Release ${{ steps.get_tag.outputs.VERSION }}
+        draft: false  # 设为 false 自动发布（根据需求调整）
+        prerelease: false
 
-    - name: Upload files
+    - name: Upload Files to Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         VERSION: ${{ steps.get_tag.outputs.VERSION }}
       run: |
+        # 上传 FRP 二进制文件
         cd frp/bin/upx/
         for file in *; do
-          if [[ -f ${file} ]]; then
-              echo "Uploading $file"
-              gh release upload "$VERSION" "$file" --repo ${{ github.repository }}
+          if [[ -f "$file" ]]; then
+            echo "📤 上传 $file 到 Release"
+            gh release upload "$VERSION" "$file" --repo hubhike/FrpMobile
           fi
         done
-    - name: Bin Files Hash
-      run: |
-        go run genDownloadConfig.go -d ./frp/bin/upx
+
+        # 上传 download_config.json
+        cd ../../..
+        if [[ -f download_config.json ]]; then
+          echo "📤 上传 download_config.json 到 Release"
+          gh release upload "$VERSION" "download_config.json" --repo hubhike/FrpMobile
+        else
+          echo "❌ download_config.json 未找到，上传失败"
+          exit 1
+        fi
