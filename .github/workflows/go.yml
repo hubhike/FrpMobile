@@ -1,95 +1,74 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
 name: Go
 
 on:
   push:
-    branches: [ "main" ]  # 根据实际分支调整（如 master/main）
+    branches: [ "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
 
 jobs:
+
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4  # 检出代码
+    - uses: actions/checkout@v4
 
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.23'  # 根据项目需求调整 Go 版本
+        go-version: '1.23'
 
     - name: Setup Android NDK
       id: setup-ndk
       uses: nttld/setup-ndk@v1
       with:
-        ndk-version: r23c  # 根据项目需求调整 NDK 版本
+        ndk-version: r23c
 
+    # - name: Install UPX
+    #   run: |
+    #     sudo apt-get update
+    #     sudo apt-get install -y upx
     - name: Get Tag
       id: get_tag
-      run: echo "VERSION=$(cat frpVersion.txt)" >> $GITHUB_OUTPUT  # 新语法设置版本输出
+      run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
 
     - name: Build
       run: |
         export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
         export GO111MODULE=on
 
-        # 下载并安装 UPX（用于压缩二进制文件）
         wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
         tar -xf upx-4.2.4-amd64_linux.tar.xz
         export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
         
-        # 执行构建脚本（生成 FRP 二进制文件到 frp/bin/upx/）
         ./build-android.sh $(cat frpVersion.txt)
 
-    - name: Generate download_config.json  # 新增：生成版本信息 JSON 文件
-      run: |
-        # 运行工具生成 download_config.json（假设工具输出到项目根目录）
-        # 需确保 genDownloadConfig.go 支持输出完整版本信息（含 downloadBaseUrl）
-        go run genDownloadConfig.go \
-          -d ./frp/bin/upx \  # 扫描 FRP 二进制文件目录
-          -o download_config.json \  # 输出到项目根目录
-          -base-url "https://github.com/hubhike/FrpMobile/releases/download/v$(cat frpVersion.txt)/"  # 动态填充下载链接
-
-        # 验证文件是否生成（可选，失败时终止流程）
-        if [[ ! -f download_config.json ]]; then
-          echo "Error: download_config.json not generated"
-          exit 1
-        fi
-
-    - name: Create Release  # 创建 GitHub Release
+    - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.get_tag.outputs.VERSION }}  # 从 get_tag 步骤获取版本号
-        release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
-        draft: true  # 设为 true 需手动发布，设为 false 自动发布
-        prerelease: false
+          tag_name: ${{ steps.get_tag.outputs.VERSION }}
+          release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
+          draft: true
+          prerelease: false
 
-    - name: Upload files to Release  # 上传二进制文件和 JSON 到 Release
+    - name: Upload files
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         VERSION: ${{ steps.get_tag.outputs.VERSION }}
       run: |
-        # 上传 FRP 二进制文件（原有逻辑）
         cd frp/bin/upx/
         for file in *; do
           if [[ -f ${file} ]]; then
-            echo "Uploading $file to Release"
-            gh release upload "$VERSION" "$file" --repo hubhike/FrpMobile
+              echo "Uploading $file"
+              gh release upload "$VERSION" "$file" --repo ${{ github.repository }}
           fi
         done
-
-        # 上传 download_config.json（新增逻辑）
-        cd ../../..  # 返回项目根目录（根据实际路径调整）
-        if [[ -f download_config.json ]]; then
-          echo "Uploading download_config.json to Release"
-          gh release upload "$VERSION" "download_config.json" --repo hubhike/FrpMobile
-        else
-          echo "Error: download_config.json not found, upload failed"
-          exit 1
-        fi
-
-    - name: Bin Files Hash  # 可选：生成哈希信息（原有逻辑）
+    - name: Bin Files Hash
       run: |
         go run genDownloadConfig.go -d ./frp/bin/upx
