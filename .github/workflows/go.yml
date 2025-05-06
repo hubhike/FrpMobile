@@ -74,11 +74,12 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' || 
-      (github.event_name == 'schedule' && needs.check-latest-version.outputs.NEED_UPDATE == 'true') || 
+      (github.event_name =='schedule' && needs.check-latest-version.outputs.NEED_UPDATE == 'true') || 
       github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-
+      - name: Wait for file update (optional, for testing)
+        run: sleep 5 # 添加短暂延时，确保文件更新同步，可根据实际情况调整时间
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
@@ -92,7 +93,10 @@ jobs:
 
       - name: Get Tag
         id: get_tag
-        run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
+        run: |
+          VERSION=$(cat frpVersion.txt)
+          echo "Current frpVersion.txt version: $VERSION" # 输出获取到的版本号
+          echo "::set-output name=VERSION::$VERSION"
 
       - name: Build
         run: |
@@ -105,7 +109,9 @@ jobs:
           export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
           
           # 执行构建脚本（传递版本号，不带 v 前缀）
-          ./build-android.sh $(cat frpVersion.txt | sed 's/^v//')
+          VERSION=$(cat frpVersion.txt | sed 's/^v//')
+          echo "Building frp version: $VERSION" # 输出实际用于构建的版本号
+          ./build-android.sh $VERSION
 
       - name: Create Release
         id: create_release
