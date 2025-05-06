@@ -1,74 +1,137 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
-name: Go
+# This workflow will auto check frp latest version, build and release
+name: Auto Build & Release
 
 on:
+  # 定时任务：每天 0 点检测新版本（UTC时间，国内为8点）
+  schedule:
+    - cron: '0 0 * * *'
+  # 手动触发构建（测试/紧急用）
+  workflow_dispatch:
+  # 原有的代码推送/PR触发
   push:
-    branches: [ "master" ]
+    branches: [ "auto" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "auto" ]
 
 jobs:
-
-  build:
+  # 检测最新版本并更新 frpVersion.txt
+  check-latest-version:
     runs-on: ubuntu-latest
+    outputs:
+      NEED_UPDATE: ${{ steps.compare.outputs.NEED_UPDATE }} # 传递给 build 作业
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
+      # 安装 jq（用于解析 GitHub API 返回的 JSON）
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
 
-    - name: Setup Android NDK
-      id: setup-ndk
-      uses: nttld/setup-ndk@v1
-      with:
-        ndk-version: r23c
+      # 获取当前记录的版本（去除 v 前缀）
+      - name: Get Current Version
+        id: current-version
+        run: |
+          CURRENT=$(cat frpVersion.txt | sed 's/^v//')
+          echo "::set-output name=CURRENT::$CURRENT"
 
-    # - name: Install UPX
-    #   run: |
-    #     sudo apt-get update
-    #     sudo apt-get install -y upx
-    - name: Get Tag
-      id: get_tag
-      run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
+      # 调用 GitHub API 获取 frp 最新 Release 版本（去除 v 前缀）
+      - name: Get Latest frp Version
+        id: latest-version
+        run: |
+          LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/fatedier/frp/releases/latest | jq -r '.tag_name')
+          LATEST=$(echo $LATEST_TAG | sed 's/^v//')
+          echo "::set-output name=LATEST::$LATEST"
 
-    - name: Build
-      run: |
-        export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
-        export GO111MODULE=on
+      # 对比版本是否需要更新
+      - name: Compare Versions
+        id: compare
+        run: |
+          CURRENT=${{ steps.current-version.outputs.CURRENT }}
+          LATEST=${{ steps.latest-version.outputs.LATEST }}
+          if [ "$CURRENT" != "$LATEST" ]; then
+            echo "::set-output name=NEED_UPDATE::true"
+            echo "New version detected: v$LATEST (current: v$CURRENT)"
+          else
+            echo "::set-output name=NEED_UPDATE::false"
+            echo "No new version, current: v$CURRENT"
+          fi
 
-        wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
-        tar -xf upx-4.2.4-amd64_linux.tar.xz
-        export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
-        
-        ./build-android.sh $(cat frpVersion.txt)
+      # 若有新版本，更新 frpVersion.txt 并提交
+      - name: Update frpVersion.txt
+        if: steps.compare.outputs.NEED_UPDATE == 'true'
+        run: |
+          echo "v${{ steps.latest-version.outputs.LATEST }}" > frpVersion.txt
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add frpVersion.txt
+          git commit -m "Auto update frp version to v${{ steps.latest-version.outputs.LATEST }}"
+          git push
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
+  # 构建并发布新版本（仅当版本更新/手动触发/代码推送时执行）
+  build:
+    needs: check-latest-version
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' || 
+      (github.event_name == 'schedule' && needs.check-latest-version.outputs.NEED_UPDATE == 'true') || 
+      github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r23c
+
+      - name: Get Tag
+        id: get_tag
+        run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
+
+      - name: Build
+        run: |
+          export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
+          export GO111MODULE=on
+
+          # 下载并安装 UPX
+          wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
+          tar -xf upx-4.2.4-amd64_linux.tar.xz
+          export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
+          
+          # 执行构建脚本（传递版本号，不带 v 前缀）
+          ./build-android.sh $(cat frpVersion.txt | sed 's/^v//')
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
           tag_name: ${{ steps.get_tag.outputs.VERSION }}
           release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
-          draft: true
+          draft: false  # 自动发布为正式版本
           prerelease: false
 
-    - name: Upload files
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        VERSION: ${{ steps.get_tag.outputs.VERSION }}
-      run: |
-        cd frp/bin/upx/
-        for file in *; do
-          if [[ -f ${file} ]]; then
-              echo "Uploading $file"
+      - name: Upload files to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.get_tag.outputs.VERSION }}
+        run: |
+          cd frp/bin/upx/
+          for file in *; do
+            if [[ -f ${file} ]]; then
+              echo "Uploading file: $file"
               gh release upload "$VERSION" "$file" --repo ${{ github.repository }}
-          fi
-        done
-    - name: Bin Files Hash
-      run: |
-        go run genDownloadConfig.go -d ./frp/bin/upx
+            fi
+          done
+
+      - name: Generate Download Config (MD5)
+        run: |
+          go run genDownloadConfig.go -d ./frp/bin/upx > download-config.json
+          gh release upload "${{ steps.get_tag.outputs.VERSION }}" download-config.json --repo ${{ github.repository }}
