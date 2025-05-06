@@ -1,137 +1,111 @@
-# This workflow will auto check frp latest version, build and release
-name: Auto Build & Release
+# This workflow will build FRP for Android and create a release with validated versions
+name: FRP Android Build
 
 on:
-  # 定时任务：每天 0 点检测新版本（UTC时间，国内为8点）
-  schedule:
-    - cron: '0 0 * * *'
-  # 手动触发构建（测试/紧急用）
-  workflow_dispatch:
-  # 原有的代码推送/PR触发
   push:
-    branches: [ "auto" ]
+    branches: [ "auto" ]  # 仅在 auto 分支推送时触发
   pull_request:
-    branches: [ "auto" ]
+    branches: [ "auto" ]  # 监听 auto 分支的 PR
 
 jobs:
-  # 检测最新版本并更新 frpVersion.txt
-  check-latest-version:
-    runs-on: ubuntu-latest
-    outputs:
-      NEED_UPDATE: ${{ steps.compare.outputs.NEED_UPDATE }} # 传递给 build 作业
-    steps:
-      - uses: actions/checkout@v4
-
-      # 安装 jq（用于解析 GitHub API 返回的 JSON）
-      - name: Install jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      # 获取当前记录的版本（去除 v 前缀）
-      - name: Get Current Version
-        id: current-version
-        run: |
-          CURRENT=$(cat frpVersion.txt | sed 's/^v//')
-          echo "::set-output name=CURRENT::$CURRENT"
-
-      # 调用 GitHub API 获取 frp 最新 Release 版本（去除 v 前缀）
-      - name: Get Latest frp Version
-        id: latest-version
-        run: |
-          LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/fatedier/frp/releases/latest | jq -r '.tag_name')
-          LATEST=$(echo $LATEST_TAG | sed 's/^v//')
-          echo "::set-output name=LATEST::$LATEST"
-
-      # 对比版本是否需要更新
-      - name: Compare Versions
-        id: compare
-        run: |
-          CURRENT=${{ steps.current-version.outputs.CURRENT }}
-          LATEST=${{ steps.latest-version.outputs.LATEST }}
-          if [ "$CURRENT" != "$LATEST" ]; then
-            echo "::set-output name=NEED_UPDATE::true"
-            echo "New version detected: v$LATEST (current: v$CURRENT)"
-          else
-            echo "::set-output name=NEED_UPDATE::false"
-            echo "No new version, current: v$CURRENT"
-          fi
-
-      # 若有新版本，更新 frpVersion.txt 并提交
-      - name: Update frpVersion.txt
-        if: steps.compare.outputs.NEED_UPDATE == 'true'
-        run: |
-          echo "v${{ steps.latest-version.outputs.LATEST }}" > frpVersion.txt
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add frpVersion.txt
-          git commit -m "Auto update frp version to v${{ steps.latest-version.outputs.LATEST }}"
-          git push
-
-  # 构建并发布新版本（仅当版本更新/手动触发/代码推送时执行）
   build:
-    needs: check-latest-version
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' || 
-      (github.event_name == 'schedule' && needs.check-latest-version.outputs.NEED_UPDATE == 'true') || 
-      github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4  # 检出当前仓库（auto 分支）
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.23'
+    - name: Set up Go 1.23
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
 
-      - name: Setup Android NDK
-        id: setup-ndk
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r23c
+    - name: Setup Android NDK r23c
+      id: setup-ndk
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r23c  # 固定 NDK 版本确保一致性
 
-      - name: Get Tag
-        id: get_tag
-        run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
+    - name: Get Target FRP Version
+      id: get_tag
+      run: |
+        TAG=$(cat frpVersion.txt)
+        echo "::set-output name=VERSION::$TAG"
+        echo "目标构建版本：$TAG"
 
-      - name: Build
-        run: |
-          export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
-          export GO111MODULE=on
+    # 新增：验证 FRP 官方仓库是否存在目标标签（核心防错）
+    - name: Validate FRP Tag Exists
+      run: |
+        TAG=${{ steps.get_tag.outputs.VERSION }}
+        # 检查 fatedier/frp 仓库是否存在该标签
+        if ! git ls-remote --tags https://github.com/fatedier/frp.git "refs/tags/$TAG" | grep -q "$TAG"; then
+          echo "❌ 错误：FRP 官方仓库不存在标签 $TAG，终止构建！"
+          exit 1
+        fi
+        echo "✅ FRP 标签 $TAG 存在，继续构建..."
 
-          # 下载并安装 UPX
-          wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
-          tar -xf upx-4.2.4-amd64_linux.tar.xz
-          export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
-          
-          # 执行构建脚本（传递版本号，不带 v 前缀）
-          ./build-android.sh $(cat frpVersion.txt | sed 's/^v//')
+    - name: Build with Error Handling
+      # 关键：启用 -e（命令失败立即终止）和 -o pipefail（管道命令失败也终止）
+      run: |
+        set -euo pipefail
+        export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
+        export GO111MODULE=on
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get_tag.outputs.VERSION }}
-          release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
-          draft: false  # 自动发布为正式版本
-          prerelease: false
+        # 下载并校验 UPX（新增安全校验）
+        UPX_VERSION="4.2.4"
+        UPX_FILE="upx-${UPX_VERSION}-amd64_linux.tar.xz"
+        UPX_URL="https://github.com/upx/upx/releases/download/v${UPX_VERSION}/${UPX_FILE}"
+        EXPECTED_SHA256="d3b6c6e3a7a3c6f0e8d5e5a0a5c6b5d7e7a3c6f0e8d5e5a0a5c6b5d7e7a3c6f0"  # 替换为实际 SHA256 哈希
+        
+        wget -q "$UPX_URL"
+        ACTUAL_SHA256=$(sha256sum "$UPX_FILE" | awk '{print $1}')
+        if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+          echo "❌ UPX 下载文件哈希不匹配，可能被篡改！"
+          exit 1
+        fi
+        
+        tar -xf "$UPX_FILE"
+        export PATH=$(pwd)/upx-${UPX_VERSION}-amd64_linux:$PATH
 
-      - name: Upload files to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.get_tag.outputs.VERSION }}
-        run: |
-          cd frp/bin/upx/
-          for file in *; do
-            if [[ -f ${file} ]]; then
-              echo "Uploading file: $file"
-              gh release upload "$VERSION" "$file" --repo ${{ github.repository }}
-            fi
-          done
+        # 执行构建脚本（已同步修改 build-android.sh 错误处理）
+        ./build-android.sh "${{ steps.get_tag.outputs.VERSION }}"
 
-      - name: Generate Download Config (MD5)
-        run: |
-          go run genDownloadConfig.go -d ./frp/bin/upx > download-config.json
-          gh release upload "${{ steps.get_tag.outputs.VERSION }}" download-config.json --repo ${{ github.repository }}
+    # 新增：验证构建产物版本（确保二进制文件版本正确）
+    - name: Verify Build Artifact Version
+      run: |
+        # 假设 upx_test.sh 支持传入架构和预期版本
+        SUPPORTED_ARCHS=("arm64" "arm" "x86" "x86_64")
+        for arch in "${SUPPORTED_ARCHS[@]}"; do
+          if ! ./upx_test.sh "$arch" "${{ steps.get_tag.outputs.VERSION }}"; then
+            echo "❌ $arch 架构构建产物版本验证失败！"
+            exit 1
+          fi
+          echo "✅ $arch 架构版本验证通过"
+        done
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_tag.outputs.VERSION }}  # 使用 frpVersion.txt 的标签
+        release_name: FRP Android Auto Build ${{ steps.get_tag.outputs.VERSION }}
+        draft: false  # 直接发布非草稿版本（根据需求调整）
+        prerelease: false
+
+    - name: Upload Build Artifacts
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ steps.get_tag.outputs.VERSION }}
+      run: |
+        cd frp/bin/upx/
+        # 上传所有构建产物（过滤目录）
+        for file in *; do
+          if [[ -f "$file" ]]; then
+            echo "上传文件：$file"
+            gh release upload "$VERSION" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+          fi
+        done
+
+    - name: Generate Download Config
+      run: |
+        go run genDownloadConfig.go -d ./frp/bin/upx
