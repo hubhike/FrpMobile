@@ -18,7 +18,7 @@ jobs:
   check-latest-version:
     runs-on: ubuntu-latest
     outputs:
-      NEED_UPDATE: ${{ steps.compare.outputs.NEED_UPDATE }} # 传递给 build 作业
+      LATEST_VERSION: ${{ steps.get-latest-version.outputs.LATEST_VERSION }} # 传递最新版本号给 build 作业
     steps:
       - uses: actions/checkout@v4
 
@@ -28,62 +28,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      # 获取当前记录的版本（去除 v 前缀）
-      - name: Get Current Version
-        id: current-version
-        run: |
-          CURRENT=$(cat frpVersion.txt | sed 's/^v//')
-          echo "::set-output name=CURRENT::$CURRENT"
-
-      # 调用 GitHub API 获取 frp 最新 Release 版本（去除 v 前缀）
+      # 调用 GitHub API 获取 frp 最新 Release 版本
       - name: Get Latest frp Version
-        id: latest-version
+        id: get-latest-version
         run: |
           LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/fatedier/frp/releases/latest | jq -r '.tag_name')
-          LATEST=$(echo $LATEST_TAG | sed 's/^v//')
-          echo "::set-output name=LATEST::$LATEST"
-
-      # 对比版本是否需要更新
-      - name: Compare Versions
-        id: compare
-        run: |
-          CURRENT=${{ steps.current-version.outputs.CURRENT }}
-          LATEST=${{ steps.latest-version.outputs.LATEST }}
-          if [ "$CURRENT" != "$LATEST" ]; then
-            echo "::set-output name=NEED_UPDATE::true"
-            echo "New version detected: v$LATEST (current: v$CURRENT)"
-          else
-            echo "::set-output name=NEED_UPDATE::false"
-            echo "No new version, current: v$CURRENT"
-          fi
-
-      # 若有新版本，更新 frpVersion.txt 并提交
-      - name: Update frpVersion.txt
-        if: steps.compare.outputs.NEED_UPDATE == 'true'
-        run: |
-          echo "v${{ steps.latest-version.outputs.LATEST }}" > frpVersion.txt
+          echo "::set-output name=LATEST_VERSION::$LATEST_TAG"
+          echo "$LATEST_TAG" > frpVersion.txt
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add frpVersion.txt
-          git commit -m "Auto update frp version to v${{ steps.latest-version.outputs.LATEST }}"
+          git commit -m "Auto update frp version to $LATEST_TAG"
           git push
 
   # 构建并发布新版本（仅当版本更新/手动触发/代码推送时执行）
   build:
     needs: check-latest-version
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' || 
-      (github.event_name =='schedule' && needs.check-latest-version.outputs.NEED_UPDATE == 'true') || 
-      github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-      - name: Clean workspace
-        run: |
-          git clean -fdx
-          git reset --hard HEAD
-      - name: Wait for file update
-        run: sleep 10 # 增加延时时间
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
@@ -95,13 +58,6 @@ jobs:
         with:
           ndk-version: r23c
 
-      - name: Get Tag
-        id: get_tag
-        run: |
-          VERSION=$(cat frpVersion.txt)
-          echo "Current frpVersion.txt version: $VERSION" # 输出获取到的版本号
-          echo "::set-output name=VERSION::$VERSION"
-
       - name: Build
         run: |
           export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
@@ -112,8 +68,8 @@ jobs:
           tar -xf upx-4.2.4-amd64_linux.tar.xz
           export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
           
-          # 执行构建脚本（传递版本号，不带 v 前缀）
-          VERSION=$(cat frpVersion.txt | sed 's/^v//')
+          # 获取最新版本号（去除 v 前缀）
+          VERSION=$(echo "${{ needs.check-latest-version.outputs.LATEST_VERSION }}" | sed 's/^v//')
           echo "Building frp version: $VERSION" # 输出实际用于构建的版本号
           ./build-android.sh $VERSION
 
@@ -123,15 +79,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.get_tag.outputs.VERSION }}
-          release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
+          tag_name: ${{ needs.check-latest-version.outputs.LATEST_VERSION }}
+          release_name: Auto Release ${{ needs.check-latest-version.outputs.LATEST_VERSION }}
           draft: false  # 自动发布为正式版本
           prerelease: false
 
       - name: Upload files to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.get_tag.outputs.VERSION }}
+          VERSION: ${{ needs.check-latest-version.outputs.LATEST_VERSION }}
         run: |
           cd frp/bin/upx/
           for file in *; do
@@ -144,4 +100,4 @@ jobs:
       - name: Generate Download Config (MD5)
         run: |
           go run genDownloadConfig.go -d ./frp/bin/upx > download-config.json
-          gh release upload "${{ steps.get_tag.outputs.VERSION }}" download-config.json --repo ${{ github.repository }}    
+          gh release upload "${{ needs.check-latest-version.outputs.LATEST_VERSION }}" download-config.json --repo ${{ github.repository }}    
