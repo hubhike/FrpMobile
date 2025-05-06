@@ -1,18 +1,17 @@
-name: Go Build and Release  # 工作流名称（可自定义）
+name: Go Build and Release
 
 on:
-  # 1. 推送到 main 分支时自动触发
+  # 1. 推送到 main 分支且修改了 frpVersion.txt 时触发
   push:
-    branches: [ "main" ]  # 监听 main 分支（根据实际分支调整）
-  # 2. 针对 main 分支的拉取请求触发
+    branches: [ "main" ]  # 监听 main 分支（根据实际调整）
+    paths:  # 仅当以下文件修改时触发（可选，精确控制）
+      - "frpVersion.txt"  # 关键：明确监听 frpVersion.txt
+      - ".github/workflows/go.yml"  # 监听工作流文件自身修改
+  # 2. 针对 main 分支的 PR 触发（无论修改哪个文件）
   pull_request:
     branches: [ "main" ]
-  # 3. 手动触发（可选，方便测试）
+  # 3. 手动触发（方便测试）
   workflow_dispatch:
-    inputs:
-      version:
-        description: "手动输入版本号（可选）"
-        required: false
 
 jobs:
   build:
@@ -23,21 +22,20 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.23'  # 根据项目需求调整 Go 版本
+        go-version: '1.23'  # 根据项目需求调整
 
     - name: Setup Android NDK
       id: setup-ndk
       uses: nttld/setup-ndk@v1
       with:
-        ndk-version: r23c  # 根据项目需求调整 NDK 版本
+        ndk-version: r23c  # 根据项目需求调整
 
-    - name: Get Tag
+    - name: Get Tag  # 从 frpVersion.txt 读取版本号
       id: get_tag
       run: |
-        # 从 frpVersion.txt 读取版本号（去掉前缀 v）
+        # 读取文件内容并去除前缀 v（如 v0.62.1 → 0.62.1）
         VERSION=$(cat frpVersion.txt | sed 's/^v//')
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-      # 输出示例：VERSION=0.62.1
 
     - name: Build FRP Binaries
       run: |
@@ -49,16 +47,16 @@ jobs:
         tar -xf upx-4.2.4-amd64_linux.tar.xz
         export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
         
-        # 执行构建脚本（生成二进制文件到 frp/bin/upx/）
-        ./build-android.sh "v$(cat frpVersion.txt)"  # 传递带 v 的版本号给构建脚本
+        # 执行构建脚本（传递带 v 的版本号）
+        ./build-android.sh "$(cat frpVersion.txt)"
 
     - name: Generate download_config.json
       run: |
-        # 动态生成 downloadBaseUrl（版本号从 frpVersion.txt 获取）
+        # 动态生成下载链接（版本号从 frpVersion.txt 获取）
         VERSION=$(cat frpVersion.txt)
         BASE_URL="https://github.com/hubhike/FrpMobile/releases/download/${VERSION}/"
 
-        # 运行工具生成 JSON（假设 genDownloadConfig.go 支持 -base-url 参数）
+        # 运行工具生成 JSON（假设工具支持 -base-url 参数）
         go run genDownloadConfig.go \
           -d ./frp/bin/upx \
           -o download_config.json \
@@ -78,7 +76,7 @@ jobs:
       with:
         tag_name: ${{ steps.get_tag.outputs.VERSION }}  # 版本标签（如 0.62.1）
         release_name: Release ${{ steps.get_tag.outputs.VERSION }}
-        draft: false  # 设为 false 自动发布（根据需求调整）
+        draft: false  # 设为 false 自动发布
         prerelease: false
 
     - name: Upload Files to Release
