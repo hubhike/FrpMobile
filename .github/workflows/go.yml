@@ -1,15 +1,15 @@
 name: Go Build and Release
 
 on:
-  # 1. 推送到 main 分支且修改了 frpVersion.txt 时触发
+  # 1. 推送到 master 分支且修改了 frpVersion.txt 时触发
   push:
-    branches: [ "main" ]  # 监听 main 分支（根据实际调整）
+    branches: [ "master" ]  # 监听 master 分支（根据实际调整）
     paths:  # 仅当以下文件修改时触发（可选，精确控制）
       - "frpVersion.txt"  # 关键：明确监听 frpVersion.txt
       - ".github/workflows/go.yml"  # 监听工作流文件自身修改
-  # 2. 针对 main 分支的 PR 触发（无论修改哪个文件）
+  # 2. 针对 master 分支的 PR 触发（无论修改哪个文件）
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
   # 3. 手动触发（方便测试）
   workflow_dispatch:
 
