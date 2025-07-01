@@ -1,4 +1,6 @@
-# FrpMobile
+# FrpMobile v0.63.0
+
+https://github.com/fatedier/frp/releases
 
 ## FRP Download
 FRP for Android download [Google Play](https://play.google.com/store/apps/details?id=com.tools.frp). The app download from `Google Play` cannot choose FRP verison anymore.
