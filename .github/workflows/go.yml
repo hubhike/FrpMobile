@@ -54,7 +54,7 @@ jobs:
       with:
           tag_name: ${{ steps.get_tag.outputs.VERSION }}
           release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
-          draft: true
+          draft: false
           prerelease: false
 
     - name: Bin Files Hash
