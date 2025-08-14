@@ -1,4 +1,4 @@
-# FrpMobile v0.63.0
+# FrpMobile v0.64.0
 
 https://github.com/fatedier/frp/releases
 
