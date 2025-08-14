@@ -57,6 +57,13 @@ jobs:
           draft: true
           prerelease: false
 
+    - name: Bin Files Hash
+      run: |
+        # 生成JSON并写入文件
+        go run genDownloadConfig.go -d ./frp/bin/upx > download-config.json
+        # 确认文件生成
+        cat download-config.json
+
     - name: Upload files
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,6 +76,6 @@ jobs:
               gh release upload "$VERSION" "$file" --repo ${{ github.repository }}
           fi
         done
-    - name: Bin Files Hash
-      run: |
-        go run genDownloadConfig.go -d ./frp/bin/upx
+        # 上传download-config.json（从upx目录返回根目录后上传）
+        cd ../../..
+        gh release upload "$VERSION" "download-config.json" --repo ${{ github.repository }}
