@@ -1,5 +1,7 @@
 # FrpMobile v0.64.0
 
+修改上面的版本号后将自动构建
+
 https://github.com/fatedier/frp/releases
 
 ## FRP Download
