@@ -1,4 +1,4 @@
-# FrpMobile v0.64.0
+# FrpMobile v0.68.0
 
 修改上面的版本号后将自动构建
 
