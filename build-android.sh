@@ -1,137 +1,118 @@
 #!/bin/bash
-set -e  # 遇到错误立即退出，便于定位问题
 
-# 检查 ANDROID_NDK_HOME 环境变量
 if [[ -z ${ANDROID_NDK_HOME} ]]; then
-    echo "错误：未设置 ANDROID_NDK_HOME 环境变量！"
+    echo "env ANDROID_NDK_HOME not found."
     exit 1
 fi
 
-# 检测当前系统平台（darwin/linux）
 get_platform() {
     case "$(uname -s)" in
         Darwin*)    echo "darwin" ;;
         Linux*)     echo "linux" ;;
-        *)          echo "unknown" && exit 1 ;;
+        *)          echo "unknown" ;;
     esac
 }
 
 PLATFORM=$(get_platform)
-echo "当前系统平台：$PLATFORM"
+echo "Current platform is: $PLATFORM"
 
-# 检查传入的 frp 版本标签参数
 TAG=${1}
 if [[ -z ${TAG} ]]; then
-    echo "使用方式：$0 [frp版本标签，如v0.68.0]"
+    echo "need input frp build tag"
     exit 1
 fi
 
-# 下载 UPX（可选，用于压缩二进制文件）
-UPX_VERSION="4.2.4"
-UPX_ARCH="amd64_linux"
-UPX_FILE="upx-${UPX_VERSION}-${UPX_ARCH}.tar.xz"
-if [[ ! -f ./upx ]]; then
-    echo "下载 UPX ${UPX_VERSION}..."
-    wget "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/${UPX_FILE}" -O ${UPX_FILE}
-    tar -xf ${UPX_FILE}
-    cp ./upx-${UPX_VERSION}-${UPX_ARCH}/upx ./upx
-    chmod +x ./upx
-fi
-
-# 克隆 frp 源码并切换到指定版本
-if [[ -d frp ]]; then
-    rm -rf frp
-fi
 git clone https://github.com/fatedier/frp.git
 cd frp || exit 1
 git checkout ${TAG}
 
-# ========== 关键修复：创建空的 dist 目录，绕过 embed 检查 ==========
-mkdir -p web/frpc/dist
-mkdir -p web/frps/dist
-# ================================================================
+rm -v -rf bin
 
-# 清空旧的构建产物
-rm -rf bin
-mkdir -p bin
+# ========== 重构 arm64 构建逻辑 ==========
+echo "Build for arm64"
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/aarch64-linux-android21-clang
+export CGO_ENABLED=0
+export GOOS=android
+export GOARCH=arm64
+go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm64/frpc ./cmd/frpc
+go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm64/frps ./cmd/frps
+unset CGO_ENABLED GOOS GOARCH  # 清理环境变量，避免影响后续构建
 
-# 构建不同架构的 frpc/frps
-build_arch() {
-    local arch=$1
-    local cc=$2
-    local goarch=$3
-    local goarm=$4  # 仅 arm 架构需要
+# ========== 重构 amd64 构建逻辑 ==========
+echo "Build for amd64"
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/x86_64-linux-android21-clang
+export CGO_ENABLED=1
+export GOOS=android
+export GOARCH=amd64
+go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86_64/frpc ./cmd/frpc
+go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86_64/frps ./cmd/frps
+unset CGO_ENABLED GOOS GOARCH
 
-    echo "开始构建 ${arch} 架构..."
-    mkdir -p bin/${arch}
+# ========== 重构 arm 构建逻辑 ==========
+echo "Build for arm"
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/armv7a-linux-androideabi16-clang
+export CGO_ENABLED=1
+export GOOS=android
+export GOARCH=arm
+export GOARM=7
+go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm/frpc ./cmd/frpc
+go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm/frps ./cmd/frps
+unset CGO_ENABLED GOOS GOARCH GOARM
 
-    # 设置编译参数
-    export CC=${cc}
-    local go_env="CGO_ENABLED=0 GOOS=android GOARCH=${goarch}"
-    if [[ -n ${goarm} ]]; then
-        go_env="${go_env} GOARM=${goarm}"
-    fi
+# ========== 重构 x86 构建逻辑 ==========
+echo "Build for x86"
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/i686-linux-android16-clang
+export CGO_ENABLED=1
+export GOOS=android
+export GOARCH=386
+go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86/frpc ./cmd/frpc
+go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86/frps ./cmd/frps
+unset CGO_ENABLED GOOS GOARCH
 
-    # 编译 frpc
-    ${go_env} go build -trimpath -ldflags "-s -w" -tags frpc -o bin/${arch}/frpc ./cmd/frpc
-    # 编译 frps
-    ${go_env} go build -trimpath -ldflags "-s -w" -tags frps -o bin/${arch}/frps ./cmd/frps
+# 后续 UPX 压缩、文件拷贝逻辑保持不变
+upx --best bin/arm64/frpc -o bin/arm64/frpc_upx || cp -v bin/arm64/frpc bin/arm64/frpc_upx
+upx --best bin/arm64/frps -o bin/arm64/frps_upx || cp -v bin/arm64/frps bin/arm64/frps_upx
 
-    # 用 UPX 压缩（不存在则跳过）
-    if [[ -f ../upx ]]; then
-        ../upx --best bin/${arch}/frpc -o bin/${arch}/frpc_upx || cp bin/${arch}/frpc bin/${arch}/frpc_upx
-        ../upx --best bin/${arch}/frps -o bin/${arch}/frps_upx || cp bin/${arch}/frps bin/${arch}/frps_upx
-    else
-        cp bin/${arch}/frpc bin/${arch}/frpc_upx
-        cp bin/${arch}/frps bin/${arch}/frps_upx
-    fi
-}
+upx --best bin/arm/frpc -o bin/arm/frpc_upx || cp -v bin/arm/frpc bin/arm/frpc_upx
+upx --best bin/arm/frps -o bin/arm/frps_upx || cp -v bin/arm/frps bin/arm/frps_upx
 
-# 1. 构建 arm64 (aarch64)
-build_arch "arm64" \
-    "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/aarch64-linux-android21-clang" \
-    "arm64" ""
+upx --best bin/x86/frpc -o bin/x86/frpc_upx || cp -v bin/x86/frpc bin/x86/frpc_upx
+upx --best bin/x86/frps -o bin/x86/frps_upx || cp -v bin/x86/frps bin/x86/frps_upx
 
-# 2. 构建 x86_64 (amd64)
-build_arch "x86_64" \
-    "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/x86_64-linux-android21-clang" \
-    "amd64" ""
+upx --best bin/x86_64/frpc -o bin/x86_64/frpc_upx || cp -v bin/x86_64/frpc bin/x86_64/frpc_upx
+upx --best bin/x86_64/frps -o bin/x86_64/frps_upx || cp -v bin/x86_64/frps bin/x86_64/frps_upx
 
-# 3. 构建 arm (armeabi-v7a)
-build_arch "arm" \
-    "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/armv7a-linux-androideabi16-clang" \
-    "arm" "7"
+# 后续目录创建、文件拷贝逻辑保持不变
+mkdir bin/upx
+mkdir bin/upx/arm64
+cp -v bin/arm64/frpc_upx bin/upx/arm64_frpc
+cp -v bin/arm64/frps_upx bin/upx/arm64_frps
 
-# 4. 构建 x86
-build_arch "x86" \
-    "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/i686-linux-android16-clang" \
-    "386" ""
+mkdir bin/upx/arm
+cp -v bin/arm/frpc_upx bin/upx/arm_frpc
+cp -v bin/arm/frps_upx bin/upx/arm_frps
 
-# 整理产物（按 Android ABI 目录结构）
-mkdir -p bin/upx
-mkdir -p bin/so
+mkdir bin/upx/x86
+cp -v bin/x86/frpc_upx bin/upx/x86_frpc
+cp -v bin/x86/frps_upx bin/upx/x86_frps
 
-# 复制 upx 压缩后的文件到 upx 目录
-for arch in arm64 x86_64 arm x86; do
-    mkdir -p bin/upx/${arch}
-    cp bin/${arch}/frpc_upx bin/upx/${arch}/frpc || true
-    cp bin/${arch}/frps_upx bin/upx/${arch}/frps || true
-done
+mkdir bin/upx/x86_64
+cp -v bin/x86_64/frpc_upx bin/upx/x86_64_frpc
+cp -v bin/x86_64/frps_upx bin/upx/x86_64_frps
 
-# 复制到 so 目录（匹配 Android ABI 命名）
-abi_mapping=(
-    "arm64:arm64-v8a"
-    "arm:armeabi-v7a"
-    "x86:x86"
-    "x86_64:x86_64"
-)
-for mapping in "${abi_mapping[@]}"; do
-    src_arch=${mapping%%:*}
-    dst_abi=${mapping##*:}
-    mkdir -p bin/so/${dst_abi}
-    cp bin/${src_arch}/frpc_upx bin/so/${dst_abi}/frpc || true
-    cp bin/${src_arch}/frps_upx bin/so/${dst_abi}/frps || true
-done
+mkdir bin/so
+mkdir bin/so/arm64-v8a
+cp -v bin/arm64/frpc_upx bin/so/arm64-v8a/libfrpc.so
+cp -v bin/arm64/frps_upx bin/so/arm64-v8a/libfrps.so
 
-echo "构建完成！产物目录：$(pwd)/bin"
-exit 0
+mkdir bin/so/armeabi-v7a
+cp -v bin/arm/frpc_upx bin/so/armeabi-v7a/libfrpc.so
+cp -v bin/arm/frps_upx bin/so/armeabi-v7a/libfrps.so
+
+mkdir bin/so/x86
+cp -v bin/x86/frpc_upx bin/so/x86/libfrpc.so
+cp -v bin/x86/frps_upx bin/so/x86/libfrps.so
+
+mkdir bin/so/x86_64
+cp -v bin/x86_64/frpc_upx bin/so/x86_64/libfrpc.so
+cp -v bin/x86_64/frps_upx bin/so/x86_64/libfrps.so
