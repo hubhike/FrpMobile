@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /bin/bash
 
 if [[ -z ${ANDROID_NDK_HOME} ]]; then
     echo "env ANDROID_NDK_HOME not found."
@@ -28,48 +28,30 @@ git checkout ${TAG}
 
 rm -v -rf bin
 
-# ========== 重构 arm64 构建逻辑 ==========
 echo "Build for arm64"
+
 export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/aarch64-linux-android21-clang
-export CGO_ENABLED=0
-export GOOS=android
-export GOARCH=arm64
-go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm64/frpc ./cmd/frpc
-go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm64/frps ./cmd/frps
-unset CGO_ENABLED GOOS GOARCH  # 清理环境变量，避免影响后续构建
+env CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm64/frpc ./cmd/frpc
+env CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm64/frps ./cmd/frps
 
-# ========== 重构 amd64 构建逻辑 ==========
 echo "Build for amd64"
+
 export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/x86_64-linux-android21-clang
-export CGO_ENABLED=1
-export GOOS=android
-export GOARCH=amd64
-go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86_64/frpc ./cmd/frpc
-go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86_64/frps ./cmd/frps
-unset CGO_ENABLED GOOS GOARCH
+env CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86_64/frpc ./cmd/frpc
+env CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86_64/frps ./cmd/frps
 
-# ========== 重构 arm 构建逻辑 ==========
 echo "Build for arm"
+
 export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/armv7a-linux-androideabi16-clang
-export CGO_ENABLED=1
-export GOOS=android
-export GOARCH=arm
-export GOARM=7
-go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm/frpc ./cmd/frpc
-go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm/frps ./cmd/frps
-unset CGO_ENABLED GOOS GOARCH GOARM
+env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm/frpc ./cmd/frpc
+env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm/frps ./cmd/frps
 
-# ========== 重构 x86 构建逻辑 ==========
 echo "Build for x86"
-export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/i686-linux-android16-clang
-export CGO_ENABLED=1
-export GOOS=android
-export GOARCH=386
-go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86/frpc ./cmd/frpc
-go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86/frps ./cmd/frps
-unset CGO_ENABLED GOOS GOARCH
 
-# 后续 UPX 压缩、文件拷贝逻辑保持不变
+export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/i686-linux-android16-clang
+env CGO_ENABLED=1 GOOS=android GOARCH=386 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86/frpc ./cmd/frpc
+env CGO_ENABLED=1 GOOS=android GOARCH=386 go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86/frps ./cmd/frps
+
 upx --best bin/arm64/frpc -o bin/arm64/frpc_upx || cp -v bin/arm64/frpc bin/arm64/frpc_upx
 upx --best bin/arm64/frps -o bin/arm64/frps_upx || cp -v bin/arm64/frps bin/arm64/frps_upx
 
@@ -82,7 +64,6 @@ upx --best bin/x86/frps -o bin/x86/frps_upx || cp -v bin/x86/frps bin/x86/frps_u
 upx --best bin/x86_64/frpc -o bin/x86_64/frpc_upx || cp -v bin/x86_64/frpc bin/x86_64/frpc_upx
 upx --best bin/x86_64/frps -o bin/x86_64/frps_upx || cp -v bin/x86_64/frps bin/x86_64/frps_upx
 
-# 后续目录创建、文件拷贝逻辑保持不变
 mkdir bin/upx
 mkdir bin/upx/arm64
 cp -v bin/arm64/frpc_upx bin/upx/arm64_frpc
