@@ -22,36 +22,44 @@ if [[ -z ${TAG} ]]; then
     exit 1
 fi
 
+# 清理旧源码（可选，确保编译环境干净）
+rm -rf frp
 git clone https://github.com/fatedier/frp.git
 cd frp || exit 1
 git checkout ${TAG}
 
 rm -v -rf bin
 
+# ==================== 编译 arm64 架构 ====================
 echo "Build for arm64"
-
+mkdir -p bin/arm64  # 提前创建输出目录
 export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/aarch64-linux-android21-clang
-env CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm64/frpc ./cmd/frpc
-env CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm64/frps ./cmd/frps
+# 添加 no_web 标签禁用 Web 界面编译
+env CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w" -tags "frpc no_web" -o bin/arm64/frpc ./cmd/frpc
+env CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -ldflags "-s -w" -tags "frps no_web" -o bin/arm64/frps ./cmd/frps
 
+# ==================== 编译 amd64 (x86_64) 架构 ====================
 echo "Build for amd64"
-
+mkdir -p bin/x86_64
 export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/x86_64-linux-android21-clang
-env CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86_64/frpc ./cmd/frpc
-env CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86_64/frps ./cmd/frps
+env CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags "frpc no_web" -o bin/x86_64/frpc ./cmd/frpc
+env CGO_ENABLED=1 GOOS=android GOARCH=amd64 go build -trimpath -ldflags "-s -w" -tags "frps no_web" -o bin/x86_64/frps ./cmd/frps
 
+# ==================== 编译 arm (armv7) 架构 ====================
 echo "Build for arm"
-
+mkdir -p bin/arm
 export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/armv7a-linux-androideabi16-clang
-env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/arm/frpc ./cmd/frpc
-env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -tags frps -o bin/arm/frps ./cmd/frps
+env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -tags "frpc no_web" -o bin/arm/frpc ./cmd/frpc
+env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -tags "frps no_web" -o bin/arm/frps ./cmd/frps
 
+# ==================== 编译 x86 架构 ====================
 echo "Build for x86"
-
+mkdir -p bin/x86
 export CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${PLATFORM}-x86_64/bin/i686-linux-android16-clang
-env CGO_ENABLED=1 GOOS=android GOARCH=386 go build -trimpath -ldflags "-s -w" -tags frpc -o bin/x86/frpc ./cmd/frpc
-env CGO_ENABLED=1 GOOS=android GOARCH=386 go build -trimpath -ldflags "-s -w" -tags frps -o bin/x86/frps ./cmd/frps
+env CGO_ENABLED=1 GOOS=android GOARCH=386 go build -trimpath -ldflags "-s -w" -tags "frpc no_web" -o bin/x86/frpc ./cmd/frpc
+env CGO_ENABLED=1 GOOS=android GOARCH=386 go build -trimpath -ldflags "-s -w" -tags "frps no_web" -o bin/x86/frps ./cmd/frps
 
+# ==================== UPX 压缩 ====================
 upx --best bin/arm64/frpc -o bin/arm64/frpc_upx || cp -v bin/arm64/frpc bin/arm64/frpc_upx
 upx --best bin/arm64/frps -o bin/arm64/frps_upx || cp -v bin/arm64/frps bin/arm64/frps_upx
 
@@ -64,36 +72,36 @@ upx --best bin/x86/frps -o bin/x86/frps_upx || cp -v bin/x86/frps bin/x86/frps_u
 upx --best bin/x86_64/frpc -o bin/x86_64/frpc_upx || cp -v bin/x86_64/frpc bin/x86_64/frpc_upx
 upx --best bin/x86_64/frps -o bin/x86_64/frps_upx || cp -v bin/x86_64/frps bin/x86_64/frps_upx
 
-mkdir bin/upx
-mkdir bin/upx/arm64
+# ==================== 整理 upx 目录 ====================
+mkdir -p bin/upx/arm64
 cp -v bin/arm64/frpc_upx bin/upx/arm64_frpc
 cp -v bin/arm64/frps_upx bin/upx/arm64_frps
 
-mkdir bin/upx/arm
+mkdir -p bin/upx/arm
 cp -v bin/arm/frpc_upx bin/upx/arm_frpc
 cp -v bin/arm/frps_upx bin/upx/arm_frps
 
-mkdir bin/upx/x86
+mkdir -p bin/upx/x86
 cp -v bin/x86/frpc_upx bin/upx/x86_frpc
 cp -v bin/x86/frps_upx bin/upx/x86_frps
 
-mkdir bin/upx/x86_64
+mkdir -p bin/upx/x86_64
 cp -v bin/x86_64/frpc_upx bin/upx/x86_64_frpc
 cp -v bin/x86_64/frps_upx bin/upx/x86_64_frps
 
-mkdir bin/so
-mkdir bin/so/arm64-v8a
+# ==================== 整理 so 目录 ====================
+mkdir -p bin/so/arm64-v8a
 cp -v bin/arm64/frpc_upx bin/so/arm64-v8a/libfrpc.so
 cp -v bin/arm64/frps_upx bin/so/arm64-v8a/libfrps.so
 
-mkdir bin/so/armeabi-v7a
+mkdir -p bin/so/armeabi-v7a
 cp -v bin/arm/frpc_upx bin/so/armeabi-v7a/libfrpc.so
 cp -v bin/arm/frps_upx bin/so/armeabi-v7a/libfrps.so
 
-mkdir bin/so/x86
+mkdir -p bin/so/x86
 cp -v bin/x86/frpc_upx bin/so/x86/libfrpc.so
 cp -v bin/x86/frps_upx bin/so/x86/libfrps.so
 
-mkdir bin/so/x86_64
+mkdir -p bin/so/x86_64
 cp -v bin/x86_64/frpc_upx bin/so/x86_64/libfrpc.so
 cp -v bin/x86_64/frps_upx bin/so/x86_64/libfrps.so
