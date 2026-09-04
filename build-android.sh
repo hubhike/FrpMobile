@@ -32,12 +32,14 @@ echo "Build for arm64"
 
 cd web/frpc
 npm install
+npm install -D vitest @vue/test-utils
 npm run build
 
 cd -
 
 cd web/frps
 npm install
+npm install -D vitest @vue/test-utils
 npm run build
 
 cd -
