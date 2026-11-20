@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# 授予 GITHUB_TOKEN 内容写权限：创建 Release / 上传资产必需
+permissions:
+  contents: write
+
 jobs:
 
   build:
