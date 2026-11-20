@@ -1,0 +1,86 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Go
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.25'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Setup Android NDK
+      id: setup-ndk
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r23c
+
+    # - name: Install UPX
+    #   run: |
+    #     sudo apt-get update
+    #     sudo apt-get install -y upx
+    - name: Get Tag
+      id: get_tag
+      run: echo "::set-output name=VERSION::$(cat frpVersion.txt)"
+
+    - name: Build
+      run: |
+        export ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}
+        export GO111MODULE=on
+
+        wget https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
+        tar -xf upx-4.2.4-amd64_linux.tar.xz
+        export PATH=$(pwd)/upx-4.2.4-amd64_linux:$PATH
+        
+        ./build-android.sh $(cat frpVersion.txt)
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+          tag_name: ${{ steps.get_tag.outputs.VERSION }}
+          release_name: Auto Release ${{ steps.get_tag.outputs.VERSION }}
+          draft: false
+          prerelease: false
+
+    - name: Bin Files Hash
+      run: |
+        # 生成JSON并写入文件
+        go run genDownloadConfig.go -d ./frp/bin/upx > download-config.json
+        # 确认文件生成
+        cat download-config.json
+
+    - name: Upload files
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ steps.get_tag.outputs.VERSION }}
+      run: |
+        cd frp/bin/upx/
+        for file in *; do
+          if [[ -f ${file} ]]; then
+              echo "Uploading $file"
+              gh release upload "$VERSION" "$file" --repo ${{ github.repository }}
+          fi
+        done
+        # 上传download-config.json（从upx目录返回根目录后上传）
+        cd ../../..
+        gh release upload "$VERSION" "download-config.json" --repo ${{ github.repository }}
